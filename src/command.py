@@ -22,6 +22,7 @@ import argparse
 import json
 import os.path
 import sys
+import datetime
 from uuid import uuid4
 from conans.client.conan_api import Conan, ProfileData
 from conans.client.command import Command as ConanCommand, OnceArgument, Extender, _add_common_install_arguments
@@ -44,18 +45,18 @@ class CycloneDXCommand:
         parser = argparse.ArgumentParser(description='CycloneDX SBOM Generator')
 
         parser.add_argument("path_or_reference", help="Path to a folder containing a recipe"
-                            " (conanfile.py or conanfile.txt) or to a recipe file. e.g., "
-                            "./my_project/conanfile.txt. It could also be a reference")
+                                                      " (conanfile.py or conanfile.txt) or to a recipe file. e.g., "
+                                                      "./my_project/conanfile.txt. It could also be a reference")
         parser.add_argument("-if", "--install-folder", action=OnceArgument,
                             help="local folder containing the conaninfo.txt and conanbuildinfo.txt "
-                            "files (from a previous conan install execution). Defaulted to "
-                            "current folder, unless --profile, -s or -o is specified. If you "
-                            "specify both install-folder and any setting/option "
-                            "it will raise an error.")
+                                 "files (from a previous conan install execution). Defaulted to "
+                                 "current folder, unless --profile, -s or -o is specified. If you "
+                                 "specify both install-folder and any setting/option "
+                                 "it will raise an error.")
         dry_build_help = ("Apply the --build argument to output the information, "
                           "as it would be done by the install command")
         parser.add_argument("-db", "--dry-build", action=Extender, nargs="?", help=dry_build_help)
-        output_help='Output file path for your SBOM (set to \'-\' to output to STDOUT)'
+        output_help = 'Output file path for your SBOM (set to \'-\' to output to STDOUT)'
         parser.add_argument(
             '--output', action='store', metavar='FILE_PATH', default="-", required=False,
             help=output_help, dest='output_file'
@@ -112,6 +113,7 @@ class CycloneDXCommand:
             "serialNumber": "urn:uuid:" + str(uuid4()),
             "version": 1,
             'metadata': {
+                'timestamp': f"{datetime.datetime.now().isoformat()}",
                 'component': {
                     'bom-ref': 'unknown@0.0.0',
                     'type': 'application',
@@ -136,12 +138,19 @@ class CycloneDXCommand:
                 for dependency in node.dependencies:
                     if str(dependency.dst.id) in node.graph_lock_node.requires:
                         to_visit.add(dependency.dst)
-
+        if deps_graph.root.ref:
+            bom['metadata']['component']['authors'] = [{"name": deps_graph.root.conanfile.author}]
+            bom['metadata']['component']['name'] = deps_graph.root.ref.name
+            bom['metadata']['component']['version'] = deps_graph.root.ref.version
+            bom['metadata']['component']['license'] = deps_graph.root.conanfile.license
+            bom['metadata']['component'][
+                'bom-ref'] = f"{bom['metadata']['component']['name']}@{bom['metadata']['component']['version']}"
         for node in deps_graph.nodes:
             if node.ref is None:
                 # top level component
                 bom['metadata']['component']['name'] = os.path.basename(os.path.dirname(node.path))
-                bom['metadata']['component']['bom-ref'] = bom['metadata']['component']['name'] + '@' + bom['metadata']['component']['version']
+                bom['metadata']['component']['bom-ref'] = bom['metadata']['component']['name'] + '@' + \
+                                                          bom['metadata']['component']['version']
                 dependencies = {
                     'ref': bom['metadata']['component']['bom-ref'],
                     'dependsOn': [],
@@ -149,16 +158,16 @@ class CycloneDXCommand:
                 for dependency in node.dependencies:
                     purl = get_purl(dependency.dst.remote, dependency.dst.ref)
                     if (
-                        self._arguments.exclude_dev
-                        and str(dependency.dst.id) not in required_ids
+                            self._arguments.exclude_dev
+                            and str(dependency.dst.id) not in required_ids
                     ):
                         continue
                     dependencies['dependsOn'].append(str(purl))
                 bom['dependencies'].append(dependencies)
             else:
                 if (
-                    self._arguments.exclude_dev
-                    and str(node.id) not in required_ids
+                        self._arguments.exclude_dev
+                        and str(node.id) not in required_ids
                 ):
                     continue
                 purl = get_purl(node.remote, node.ref)
@@ -178,8 +187,8 @@ class CycloneDXCommand:
                 }
                 for dependency in node.dependencies:
                     if (
-                        self._arguments.exclude_dev
-                        and str(dependency.dst.id) not in required_ids
+                            self._arguments.exclude_dev
+                            and str(dependency.dst.id) not in required_ids
                     ):
                         continue
                     dep_purl = get_purl(dependency.dst.remote, dependency.dst.ref)
