@@ -174,6 +174,7 @@ class CycloneDXCommand:
                 component = {
                     'bom-ref': str(purl),
                     'type': 'library',
+                    'license': node.conanfile.license,
                     'name': node.ref.name,
                     'version': node.ref.version,
                     'purl': str(purl),
