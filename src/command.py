@@ -23,7 +23,7 @@ import hashlib
 import json
 import os.path
 import sys
-import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 from conans.client.conan_api import Conan, ProfileData
@@ -32,6 +32,7 @@ from conans.client.graph.graph import DepsGraph, Node
 from conans.client.output import ConanOutput, colorama_initialize
 from conans.errors import ConanMigrationError, ConanException
 from cyclonedx.factory.license import LicenseFactory
+from cyclonedx.model.bom import Bom
 from packageurl import PackageURL
 from typing import Set
 
@@ -142,7 +143,7 @@ class CycloneDXCommand:
             "serialNumber": "urn:uuid:" + str(uuid4()),
             "version": 1,
             'metadata': {
-                'timestamp': f"{datetime.datetime.now().isoformat()}Z",
+                'timestamp': f"{datetime.now(tz=timezone.utc).isoformat()}",
                 'component': {
                     'bom-ref': 'unknown@0.0.0',
                     'type': 'application',
