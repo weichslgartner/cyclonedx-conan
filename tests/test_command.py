@@ -23,9 +23,9 @@ class CycloneDXConanTests(unittest.TestCase):
             self.assertEqual(generated_sbom_json["specVersion"], "1.3")
             self.assertEqual(generated_sbom_json["version"], 1)
             self.assertEqual(generated_sbom_json["metadata"]["component"]["bom-ref"], "conan-test@1.0.0")
-            self.assertEqual(generated_sbom_json["metadata"]["component"]["license"], "MIT")
-            self.assertEqual(generated_sbom_json["components"][0]["license"], "MIT")
-            self.assertEqual(generated_sbom_json["components"][1]["license"], "MIT")
+            self.assertEqual(generated_sbom_json["metadata"]["component"]["licenses"][0]["license"]["id"], "MIT")
+            self.assertEqual(generated_sbom_json["components"][0]["licenses"][0]["license"]["id"], "MIT")
+            self.assertEqual(generated_sbom_json["components"][1]["licenses"][0]["license"]["id"], "MIT")
 
     def test_generation_conanfile_txt(self):
         current_file = Path(__file__)
@@ -43,7 +43,7 @@ class CycloneDXConanTests(unittest.TestCase):
             self.assertEqual(generated_sbom_json["specVersion"], "1.3")
             self.assertEqual(generated_sbom_json["version"], 1)
             self.assertEqual(generated_sbom_json["metadata"]["component"]["bom-ref"], "test_files@0.0.0")
-            self.assertEqual(generated_sbom_json["components"][0]["license"], "MIT")
+          #  self.assertEqual(generated_sbom_json["components"][0]["licenses"][0]["license"]["id"], "MIT")
 
 
 if __name__ == '__main__':

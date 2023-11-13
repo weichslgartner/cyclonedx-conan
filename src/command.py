@@ -19,16 +19,19 @@
 # Copyright (c) OWASP Foundation. All Rights Reserved.
 
 import argparse
+import hashlib
 import json
 import os.path
 import sys
 import datetime
+from pathlib import Path
 from uuid import uuid4
 from conans.client.conan_api import Conan, ProfileData
 from conans.client.command import Command as ConanCommand, OnceArgument, Extender, _add_common_install_arguments
 from conans.client.graph.graph import DepsGraph, Node
 from conans.client.output import ConanOutput, colorama_initialize
 from conans.errors import ConanMigrationError, ConanException
+from cyclonedx.factory.license import LicenseFactory
 from packageurl import PackageURL
 from typing import Set
 
@@ -76,6 +79,32 @@ class CycloneDXCommand:
 
         return parser
 
+    @staticmethod
+    def generate_license(license_name):
+        if not license_name:
+            return None
+        lf = LicenseFactory().make_from_string(license_name)
+        if lf.id:
+            return [{"license": {"id": lf.id}}]
+        return [{"license": {"name": lf.name}}]
+
+    @staticmethod
+    def generate_hash(component, conan_api, node):
+        lib_path = (Path(
+            conan_api.cache_folder) / "data" / node.ref.name / node.ref.version / "_" / "_" /
+                    "package" /
+                    f"{node.graph_lock_node.package_id}" / "lib")
+        if not lib_path.exists():
+            return
+        hash = hashlib.sha256()
+
+        for file in lib_path.glob("*"):
+            try:
+                hash.update(file.read_bytes())
+            except IsADirectoryError:
+                pass
+        component["hashes"] = [{"alg": "SHA-256", "content": hash.hexdigest()}]
+
     def execute(self):
         try:
             conan_api = Conan(output=ConanOutput(sys.stderr, sys.stderr, colorama_initialize()))
@@ -113,7 +142,7 @@ class CycloneDXCommand:
             "serialNumber": "urn:uuid:" + str(uuid4()),
             "version": 1,
             'metadata': {
-                'timestamp': f"{datetime.datetime.now().isoformat()}",
+                'timestamp': f"{datetime.datetime.now().isoformat()}Z",
                 'component': {
                     'bom-ref': 'unknown@0.0.0',
                     'type': 'application',
@@ -124,7 +153,8 @@ class CycloneDXCommand:
             'components': [],
             'dependencies': [],
         }
-
+        if deps_graph.root.conanfile.author:
+            bom['metadata']["author"] = [{"name": deps_graph.root.conanfile.author}]
         required_ids = set()
         if self._arguments.exclude_dev:
             visited_ids = set()
@@ -139,10 +169,11 @@ class CycloneDXCommand:
                     if str(dependency.dst.id) in node.graph_lock_node.requires:
                         to_visit.add(dependency.dst)
         if deps_graph.root.ref:
-            bom['metadata']['component']['authors'] = [{"name": deps_graph.root.conanfile.author}]
+           # bom['metadata']['component']['authors'] = [{"name": deps_graph.root.conanfile.author}]
             bom['metadata']['component']['name'] = deps_graph.root.ref.name
             bom['metadata']['component']['version'] = deps_graph.root.ref.version
-            bom['metadata']['component']['license'] = deps_graph.root.conanfile.license
+            if deps_graph.root.conanfile.license:
+                bom['metadata']['component']['licenses'] = CycloneDXCommand.generate_license(deps_graph.root.conanfile.license)
             bom['metadata']['component'][
                 'bom-ref'] = f"{bom['metadata']['component']['name']}@{bom['metadata']['component']['version']}"
         for node in deps_graph.nodes:
@@ -165,6 +196,7 @@ class CycloneDXCommand:
                     dependencies['dependsOn'].append(str(purl))
                 bom['dependencies'].append(dependencies)
             else:
+
                 if (
                         self._arguments.exclude_dev
                         and str(node.id) not in required_ids
@@ -174,11 +206,14 @@ class CycloneDXCommand:
                 component = {
                     'bom-ref': str(purl),
                     'type': 'library',
-                    'license': node.conanfile.license,
                     'name': node.ref.name,
                     'version': node.ref.version,
                     'purl': str(purl),
                 }
+                if deps_graph.root.conanfile.license:
+                    component['licenses']= CycloneDXCommand.generate_license(deps_graph.root.conanfile.license)
+                if node.graph_lock_node:
+                    CycloneDXCommand.generate_hash(component, conan_api, node)
                 if node.ref.user:
                     component['namespace'] = node.ref.user
                 bom['components'].append(component)
